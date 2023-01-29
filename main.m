@@ -1,0 +1,203 @@
+clc;clear;close all
+addpath('D:\mega\work\evaluation', 'D:\mega\work\Complicate','D:\mega\work\UCI','D:\mega\work\drawGraph');
+addpath('D:\mega\work\Celldata');
+%load ('yeast.mat');
+load ('pathbased.mat');
+
+%% paramters setting
+percent=0.4% 
+mdelta=3.5;
+shapeset =data;
+distset = computeSimi(shapeset);% 
+%% DPC algorithm
+dc = computeDc(distset, percent);% 
+rhos = getLocalDensity(distset, dc);%
+[deltas, nneigh] = getDistanceToHigherDensity(distset, rhos);% 
+min_delta=mdelta;
+min_rho=0;
+xstep=max(rhos)/10;%default values,it is a fixed value for all the datasets.
+showDG(rhos, deltas);% 
+filter = (rhos > min_rho) & (deltas > min_delta);
+cluster_num = sum(filter)%
+ords = find(filter);%
+trueords=ords;
+cluster = zeros(size(rhos));
+color = 1;
+for i = 1:size(ords, 2)
+    cluster(ords(i)) = color;% 
+    color = color + 1;
+end
+[sorted_rhos, rords] =  sort(rhos, 'descend');%
+for i = 1:size(rords, 2) % 
+    if cluster(rords(i)) == 0% 
+        neigh_cluster = cluster(nneigh(rords(i)));
+        assert(neigh_cluster ~= 0, 'neigh_cluster has not assign!');
+        cluster(rords(i)) = neigh_cluster;%
+    end
+end
+index=cluster;
+%figure('NumberTitle', 'off', 'Name', 'Dpc聚类结果');
+%drawgraph(index',shapeset);
+xlim1=get(gca,'Xlim');
+ylim1=get(gca,'Ylim'); 
+subspace={};
+for i=1:(xlim1(2)/xstep)
+    subspace{i}=find(rhos([ords])>=(i-1)*xstep & rhos([ords])<=i*xstep);
+end
+ss=[];
+for i=1:length(subspace)
+    if isempty (subspace{i})
+        ss(i)=0;
+    else
+        ss(i)=1;
+    end
+end
+last1 = find(ss,1,'last');
+first1=find(ss,1);
+ss = ss(first1:last1); %
+start=twozeroleast(ss);%
+if start==100
+    %fprintf('符合DP算法的假设');
+    idx=cluster';
+    drawgraph(idx,data);
+    Evaluation(label,idx);
+    figure;
+    return;
+end
+idx=zeros(1,size(data,1));
+silarm=[];%  find and save the representative points
+silar=[];
+for i=first1:start+first1-1
+    temp=subspace{i};
+    silar=[silar temp];
+end
+for i=1:length(silar)
+    a=find (cluster==silar(i));
+    silarm=[silarm a];
+end
+idx([silarm])=200;%change the idx(clustering results)
+k=sqrt(size(silarm,2));
+idxm=mknn(data([silarm],:),k);
+if max(idxm)>1
+    for i=1:max(idxm)
+        %find some clusters, the one
+        %has more data points is natural cluster.
+        idxm_len(i)=length(find(idxm==i));
+    end
+    [idxm_max idxm_index]=max(idxm_len);
+    newcl=  silarm(find (idxm~=idxm_index));
+else%only one cluster here in low-density area
+    newcl=[];
+end
+c1=deltas(silarm);
+mean(c1(1:50));
+mean(c1(50:61));
+max(deltas(silarm));
+figure()
+drawgraph(idxm,data([silarm],:));
+%%
+idx([newcl])=0;% except the cluster with low densiyt, the idx all equal to 0.
+datanum=[];%record the original data order of other data
+for i=1:length(data(:,1))
+    if idx(i)==0
+        datanum(i)=i;%datanum save the remaining clusters
+    end
+end
+figure('NumberTitle', 'off', 'Name', '低密度区域');
+showShapeSet(data([silarm],:));
+set(gca,'looseInset',[0 0 0 0]);
+puri_datanum=find (datanum>0);% 提取datanum中大于0的元序号。
+figure('NumberTitle', 'off', 'Name', '高密度区域');
+showShapeSet(data([puri_datanum],:)); set(gca,'looseInset',[0 0 0 0]);
+%% dbscan
+high_ords=intersect(puri_datanum,ords);%find the cluster centers in the high-densiyt area
+% high_ords=ords(high_ords)
+index_rho=rhos([high_ords]);
+[min_a min_b]=min(index_rho);%find the low-density cluster center in the high-densiyt area
+[max_aa max_bb]=max(index_rho);
+cc=find(index==index(high_ords(min_b)));%cc represent all the data points of the cluster, which contains the center with lowest densiyt.
+[max_a max_b]=max(distset(high_ords(min_b),[cc]));% the data point in the same cluster but has largest distance to cluster center with low density
+distsort=sort(distset(cc(1)+max_b,:));%distance between the furtherest data points and other data points
+distsort(1)=+inf;
+distsort=sort(distsort);
+Eps=distsort(round(sqrt(length(cc))));%eps of the cluster center with low density
+lowneig=distset(cc(1)+max_b,:);
+%：cluster centers with lower density in the high-density area
+MinPts=round((length(find(lowneig<=Eps))+length(find(distset(high_ords(max_bb),:)<=Eps)))/2);%25
+distmat=computeSimi(data([puri_datanum],:));
+showShapeSet(data([puri_datanum],:)); set(gca,'looseInset',[0 0 0 0]);
+Clust = DBSCAN(distmat,Eps,MinPts);
+idx([puri_datanum])=Clust;
+figure('NumberTitle', 'off', 'Name', 'DBSCAN聚类结果');
+hold on;
+drawgraph(Clust,data([puri_datanum],:));
+idx1=idx;
+%% dbscan will generate some outliers, we reassign them
+% outlier_rep
+outlier_rep=[];
+ordoutlier=[];
+for i=1:length(ords)
+    if idx(ords(i))==100
+        ordoutlier=[ordoutlier
+            i];
+    end
+end
+ords([ordoutlier' silar]) =[];
+for i=1:length(idx)
+    if idx(i)==100 % outlier
+        [a,b]=  min( distset(i,[ords]));
+        outlier_rep(i)=ords(b);
+    end
+end
+for i=1:length(outlier_rep)
+    if outlier_rep(i)>0
+        idx(i)=idx(outlier_rep(i));
+    end
+end
+%%
+ndata_cluster=[];% save the number of data generated by dbscan
+numidx=unique (idx);
+for ii=1:length(numidx)
+    if numidx(ii)<100
+        ndata_cluster(ii)=length(find(idx==ii));
+    end
+end
+% compute the density peak of existing clusters, find the original data
+% order
+dbpeak=[];
+dbrho=[];
+dbnum=[];
+points_idx=[];
+dppeak_rho=[];
+for jj=1:length(numidx)
+    if numidx(jj)<=100
+        points_idx=find(idx==jj);% the data order of cluster jj
+        [dbrho dbnum]=max (rhos(points_idx));
+        dbpeak(jj)=points_idx(dbnum);%save which data points are peaks
+        dppeak_rho(jj)=dbrho;% save peaks
+    end
+end
+% min_dis_peak=[];
+dbpeak_simi=computeSimi(data(dbpeak,:));
+[sdprho,sdprhonum]=sort(dppeak_rho, 'descend');
+min_peak_cluster=min(find (sort(dppeak_rho, 'descend')<mean(dppeak_rho)));
+if length(dppeak_rho)>2*(min_peak_cluster)%length(dppeak_rho)>2*(min_peak_cluster+0.5)
+    for i=(min_peak_cluster+1):length(dppeak_rho)
+        dbpeak_simi(i,i)=inf;
+        bbb=sdprhonum(1:min_peak_cluster);
+        [aa bb]=min (dbpeak_simi(sdprhonum(i),bbb));
+        for jj=1:length(idx)
+            if idx(jj)<=100
+                idx(find(idx==i))=bbb(bb);
+                % updata peaks
+            end
+        end
+    end
+end
+%%
+idx=idx';
+Evaluation(label,idx);
+figure('NumberTitle', 'off', 'Name', '最终聚类结果');
+drawgraph(idx,data);
+
+
