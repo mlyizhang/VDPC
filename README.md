@@ -1,3 +1,3 @@
 # VDPC code
 This version is just to make exprements. If it is helpful to you, please cite our paper.  
-Y. Wang, D. Wang(#), Y. Zhou, X. Zhang, C. Quek, VDPC: Variational Density Peak Clustering Algorithm[J]. Information Sciences, 621, 2022: 627-651.
+Wang Y, Wang D, Zhou Y, et al. VDPC: Variational density peak clustering algorithm[J]. Information Sciences, 2023, 621: 627-651.
